@@ -46,7 +46,7 @@ RETRIES = 3
 
 @retry(RETRIES, (TimeoutError, ConnectionError, ))
 def test_clearnet_raw():
-    hostname = 'ifconfig.me'
+    hostname = 'www.naver.com'
     with TorClient() as tor:
         # Choose random guard node and create 3-hops circuit
         with tor.create_circuit(3) as circuit:
@@ -260,3 +260,6 @@ def test_select():
                     sock_w.close()
                     assert events[socket.socket]['close'].wait(10), 'no sock close received'
                     assert events[TorStream]['close'].wait(10), 'no stream close received'
+
+if __name__ == "__main__":
+    test_clearnet_raw()
