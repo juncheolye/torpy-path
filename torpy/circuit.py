@@ -582,15 +582,24 @@ class TorCircuit:
 
     @check_connected
     def build_hops(self, hops_count):
-        logger.info('Building %i hops circuit...', hops_count)
+        """Build additional hops to reach the total hop count.
+
+        Args:
+            hops_count: Total number of hops (nodes) the circuit should have.
+                       Additional hops will be added to reach this total.
+        """
+        logger.info('Building circuit to %i total hops...', hops_count)
+        # Build additional hops to reach hops_count total nodes
         while self.nodes_count < hops_count:
             if self.nodes_count == hops_count - 1:
+                # Last hop should be an exit node
                 router = self._guard.consensus.get_random_exit_node()
             else:
+                # Middle hops
                 router = self._guard.consensus.get_random_middle_node()
 
             self.extend(router)
-        logger.debug('Circuit has been built')
+        logger.debug('Circuit has been built with %i total hops', self.nodes_count)
 
     @check_connected
     def create_stream(self, address=None):

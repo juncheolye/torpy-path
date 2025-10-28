@@ -55,6 +55,26 @@ class TorClient:
 
     @contextmanager
     def create_circuit(self, hops_count=3, guard_by_flags=None) -> 'ContextManager[TorCircuit]':
+        """Create a Tor circuit with the specified number of hops.
+
+        Args:
+            hops_count: Total number of hops (relay nodes) in the circuit. Default is 3.
+                       - 1: Guard only (for directory operations)
+                       - 2: Guard + Exit (faster but less anonymous)
+                       - 3: Guard + Middle + Exit (standard Tor circuit, recommended)
+                       - 4+: Guard + Middle(s) + Exit (longer path, slower)
+            guard_by_flags: Optional router flags to filter guard node selection.
+
+        Yields:
+            TorCircuit: The created circuit as a context manager.
+
+        Example:
+            with TorClient() as tor:
+                with tor.create_circuit(3) as circuit:
+                    with circuit.create_stream(('example.com', 80)) as stream:
+                        stream.send(b'GET / HTTP/1.0\\r\\n\\r\\n')
+                        data = stream.recv(1024)
+        """
         with self.get_guard(guard_by_flags) as guard:
             yield guard.create_circuit(hops_count)
 

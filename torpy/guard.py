@@ -133,16 +133,34 @@ class TorGuard:
         3, (CircuitExtendError, CellTimeoutError), log_func=functools.partial(log_retry, msg='Retry circuit creation')
     )
     def create_circuit(self, hops_count, extend_routers=None):
+        """Create a new Tor circuit with the specified number of hops.
+
+        Args:
+            hops_count: Total number of hops (nodes) in the circuit.
+                       - hops_count=1: Guard only (for directory operations)
+                       - hops_count=2: Guard + Exit
+                       - hops_count=3: Guard + Middle + Exit (standard Tor circuit)
+            extend_routers: Optional list of specific routers to extend the circuit with
+                          after building the initial hops.
+
+        Returns:
+            TorCircuit: The created circuit.
+
+        Note:
+            The guard node is created first, then additional nodes are added
+            to reach the total hop count specified by hops_count.
+        """
         if self._state != GuardState.Connected:
             raise Exception('You must connect to guard node first')
 
         circuit = self._circuits.create_new()
         try:
-            circuit.create()
+            circuit.create()  # Create circuit with guard node (1 node)
 
-            circuit.build_hops(hops_count)
+            circuit.build_hops(hops_count)  # Build additional hops to reach total
 
             if extend_routers:
+                # Extend with specific routers (e.g., for hidden service directories)
                 for router in extend_routers:
                     circuit.extend(router)
         except Exception:
