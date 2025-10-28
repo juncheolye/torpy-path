@@ -16,6 +16,7 @@
 import os
 import socket
 import logging
+import time
 from threading import Event
 from selectors import EVENT_READ
 from multiprocessing.pool import ThreadPool
@@ -50,14 +51,83 @@ def test_clearnet_raw():
     with TorClient() as tor:
         # Choose random guard node and create 3-hops circuit
         with tor.create_circuit(3) as circuit:
-            # Create tor stream to host
-            with circuit.create_stream((hostname, 80)) as stream:
-                # Send some data to it
-                stream.send(b'GET / HTTP/1.0\r\nHost: %s\r\n\r\n' % hostname.encode())
+            logger.info('Circuit built successfully with %d hops', circuit.nodes_count)
+
+            # Display circuit path information
+            logger.warning('=' * 70)
+            logger.warning('CIRCUIT PATH (Circuit #%x):', circuit.id)
+            for i, node in enumerate(circuit._circuit_nodes):
+                router = node.router
+                node_type = 'Guard' if i == 0 else ('Exit' if i == circuit.nodes_count - 1 else 'Middle')
+                logger.warning('  Hop %d [%s]: %s:%d (%s)',
+                             i + 1, node_type, router.ip, router.dir_port or router.or_port,
+                             router.nickname or 'Unknown')
+            logger.warning('=' * 70)
+
+            # Create tor stream (without connecting yet)
+            stream = circuit.create_stream()
+
+            try:
+                # Measure latency 1: RelayBegin (stream connection)
+                logger.info('Starting RelayBegin latency measurement...')
+                relay_begin_start = time.time()
+                stream.connect((hostname, 80))
+                relay_begin_end = time.time()
+                relay_begin_latency = relay_begin_end - relay_begin_start
+
+                logger.warning('=' * 70)
+                logger.warning('LATENCY 1 - RelayBegin (Circuit->Stream Connection):')
+                logger.warning('  Target: %s:%d', hostname, 80)
+                logger.warning('  Time: %.3f seconds (%.0f ms)', relay_begin_latency, relay_begin_latency * 1000)
+                logger.warning('  Description: Time to establish stream connection through circuit')
+                logger.warning('=' * 70)
+
+                # Measure latency 2: HTTP request/response
+                logger.info('Starting HTTP request latency measurement...')
+                http_request_start = time.time()
+
+                # Send HTTP request
+                request_data = b'GET / HTTP/1.0\r\nHost: %s\r\n\r\n' % hostname.encode()
+                stream.send(request_data)
+                logger.debug('Sent HTTP request: %d bytes', len(request_data))
+
+                # Receive response
                 recv = recv_all(stream).decode()
-                logger.warning('recv: %s', recv)
+                logger.debug('Received HTTP response: %d bytes', len(recv))
+
+                http_request_end = time.time()
+                http_request_latency = http_request_end - http_request_start
+
+                logger.warning('=' * 70)
+                logger.warning('LATENCY 2 - HTTP Request/Response:')
+                logger.warning('  Request: GET / HTTP/1.0')
+                logger.warning('  Time: %.3f seconds (%.0f ms)', http_request_latency, http_request_latency * 1000)
+                logger.warning('  Data received: %d bytes', len(recv))
+                logger.warning('  Description: Time to send request and receive full response')
+                logger.warning('=' * 70)
+
+                # Total latency
+                total_latency = relay_begin_latency + http_request_latency
+                logger.warning('=' * 70)
+                logger.warning('TOTAL LATENCY (RelayBegin + HTTP):')
+                logger.warning('  Time: %.3f seconds (%.0f ms)', total_latency, total_latency * 1000)
+                logger.warning('  Breakdown:')
+                logger.warning('    - RelayBegin: %.0f ms (%.1f%%)',
+                             relay_begin_latency * 1000,
+                             (relay_begin_latency / total_latency * 100))
+                logger.warning('    - HTTP Request: %.0f ms (%.1f%%)',
+                             http_request_latency * 1000,
+                             (http_request_latency / total_latency * 100))
+                logger.warning('=' * 70)
+
+                logger.info('Response preview: %s', recv[:200])
+
+                # Verify response
                 search_ip = '.'.join(circuit.last_node.router.ip.split('.')[:-1]) + '.'
                 assert search_ip in recv, 'wrong data received'
+
+            finally:
+                stream.close()
 
 
 @retry(RETRIES, (TimeoutError, ConnectionError, ))
